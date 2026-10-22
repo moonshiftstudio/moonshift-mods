@@ -1,0 +1,25 @@
+{
+  "name": "moonshift-mods",
+  "description": "Claude Code mods for building Moonshift Studio apps: studio board, secret guard and the Moonshift skin.",
+  "owner": {
+    "name": "Moonshift Studio",
+    "email": "hello@moonshiftstudio.com"
+  },
+  "plugins": [
+    {
+      "name": "studio-board",
+      "source": "./plugins/studio-board",
+      "description": "/studio opens a panel with every Moonshift app's status and links plus a studio to-do list; /todo adds to it."
+    },
+    {
+      "name": "secret-guard",
+      "source": "./plugins/secret-guard",
+      "description": "Stops Claude from writing secret keys into code or committing and pushing them, and keeps .env files out of git."
+    },
+    {
+      "name": "moonshift-skin",
+      "source": "./plugins/moonshift-skin",
+      "description": "Moonshift look: night-shift spinner words, a gold shift-done line and the app you're working on in the footer."
+    }
+  ]
+}

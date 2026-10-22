@@ -1,0 +1,10 @@
+{
+  "name": "secret-guard",
+  "version": "0.1.0",
+  "description": "Stops Claude from writing secret keys into code or committing and pushing them, and keeps .env files out of git.",
+  "license": "MIT",
+  "author": {
+    "name": "Moonshift Studio",
+    "email": "hello@moonshiftstudio.com"
+  }
+}
