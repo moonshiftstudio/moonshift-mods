@@ -127,7 +127,8 @@ export const register: Register = on => {
   on('command.run', { command: 'todo' }, async ($, e) => {
     const text = e.args.trim()
     if (!text) {
-      await $.ui.open({ id: PANE, title: 'Moonshift Studio' })
+      const opened = await $.ui.open({ id: PANE, title: 'Moonshift Studio' })
+      if (!opened.isPlaced) return { text: 'Type /todo followed by the task, like: /todo Restore the Unbadged database' }
       await update($, isAdding, () => true)
       return { text: 'Type the to-do in the Moonshift Studio board.' }
     }

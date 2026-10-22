@@ -1,6 +1,6 @@
 {
   "name": "studio-board",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Moonshift Studio board: /studio opens a panel with every app's status and links plus your studio to-do list; /todo adds to it.",
   "types": "./types/index.d.ts",
   "license": "MIT",
