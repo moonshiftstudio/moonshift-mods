@@ -105,9 +105,23 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // The board as text, for where no panel can be drawn (the Claude app's chats).
+  function boardText(list: Todo[]) {
+    const here = APPS.find(app => app.match.test(cwd))
+    const apps = APPS.map(app => {
+      const links = app.links.map(l => `[${l.label}](${l.href})`).join(' · ')
+      return `- **${app.name}**: ${app.status}${here === app ? " (you're here)" : ''}. ${links}${app.note ? `\n  ${app.note}` : ''}`
+    }).join('\n')
+    const studio = STUDIO_LINKS.map(l => `[${l.label}](${l.href})`).join(' · ')
+    const open = list.filter(t => !t.isDone)
+    const todo = open.length ? open.map(t => `- [ ] ${t.text}`).join('\n') : '- Nothing yet. Add one with /todo and what to do.'
+    return `☾ **Moonshift Studio**\n\n${apps}\n\n**Studio:** ${studio}\n\n**To-do (${open.length} open)**\n${todo}`
+  }
+
   on('command.run', { command: 'studio' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Moonshift Studio' })
-    return { text: 'Moonshift Studio board opened.' }
+    const opened = await $.ui.open({ id: PANE, title: 'Moonshift Studio' })
+    if (opened.isPlaced) return { text: 'Moonshift Studio board opened.' }
+    return { text: boardText(await read($, todos)) }
   })
 
   on('command.run', { command: 'todo' }, async ($, e) => {

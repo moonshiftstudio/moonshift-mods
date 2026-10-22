@@ -26,3 +26,17 @@ test('the board lists the apps and adds a to-do', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('where no panel can be drawn, /studio answers with the board as text', async ($, on) => {
+  mock.clock(on, { now: 1792600000000 })
+  mock.store(on)
+  on('command.register', () => ({ value: { command: 'x' } }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'no-surface' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/work/moonshiftstudio-site', surface: null, isInteractive: true })
+  await $.command.run({ command: 'todo', args: 'Check the devlog dates' })
+  const board = await $.command.run({ command: 'studio', args: '' })
+  expect(board.text).toContain('**Website**: Live (you\'re here)')
+  expect(board.text).toContain('- [ ] Check the devlog dates')
+})
