@@ -1,0 +1,10 @@
+{
+  "name": "token-saver",
+  "version": "0.1.0",
+  "description": "Token Saver: helper agents run on a cheaper model, browser screenshots come back smaller, and /handoff writes a note that moves a long chat to a fresh one. /saver shows and switches each part.",
+  "license": "MIT",
+  "author": {
+    "name": "Moonshift Studio",
+    "email": "hello@moonshiftstudio.com"
+  }
+}
