@@ -8,10 +8,30 @@ const TITLE = 'Agent Watch'
 const MAIN = 'main'
 const KEEP = 40
 
+// Moonshift Studio colors
+const GOLD = '#E5B24C'
+const MOONLIGHT = '#A9BCFF'
+const GREEN = '#5BD69A'
+const RED = '#FF6B6B'
+
 const rows = atom({ plugin: 'agent-watch', key: 'rows' } as const, [], {
-  shape: 'rows-1',
+  shape: 'rows-2',
 })
 const tick = atom({ plugin: 'agent-watch', key: 'tick' } as const, 0)
+
+// A working agent's moon turns through its phases, one step per beat.
+const MOONS = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']
+const BEAT_MS = 500
+
+const ICON: Record<string, string> = {
+  main: '☾',
+  Explore: '🔭',
+  Plan: '🧭',
+  'general-purpose': '🔧',
+  claude: '🔧',
+  'claude-code-guide': '📖',
+  fork: '🌿',
+}
 
 const blank = (id: string, now: number): AgentRow => ({
   id,
@@ -19,6 +39,7 @@ const blank = (id: string, now: number): AgentRow => ({
   kind: id === MAIN ? 'main' : 'agent',
   state: 'working',
   now: 'Starting',
+  trail: [],
   startedAt: now,
   calls: 0,
 })
@@ -111,10 +132,9 @@ const span = (ms: number): string => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
-const MARK: Record<AgentState, string> = {
-  working: '●',
-  waiting: '◌',
-  done: '✓',
+const MARK: Record<Exclude<AgentState, 'working'>, string> = {
+  waiting: '🌙',
+  done: '✦',
   failed: '✗',
   stopped: '■',
 }
@@ -125,6 +145,13 @@ const WORD: Record<AgentState, string> = {
   failed: 'Failed',
   stopped: 'Stopped',
 }
+const COLOR: Record<AgentState, string | undefined> = {
+  working: MOONLIGHT,
+  waiting: undefined,
+  done: GREEN,
+  failed: RED,
+  stopped: undefined,
+}
 const ORDER: Record<AgentState, number> = {
   working: 0,
   waiting: 1,
@@ -133,52 +160,77 @@ const ORDER: Record<AgentState, number> = {
   done: 4,
 }
 
+/** The moon a working agent shows on this beat; each row runs a step apart. */
+const moon = (beat: number, offset = 0): string => MOONS[(beat + offset) % MOONS.length] ?? '🌕'
+
 export const register: Register = on => {
+  // Calm: no motion and no finish toasts. Kept between sessions.
+  let isCalm = false
+
   on('session.start', async ($, e, next) => {
+    isCalm = (await $.store.get('calm').catch(() => false)) === true
     await $.command.register({
       name: 'agent-watch',
       description: 'Show what every agent is doing and how far along it is',
+      argumentHint: '[calm|lively]',
     })
     void $.ui.open({ id: PANE, title: TITLE })
 
     // The engine's own list is the truth for an agent's status: read it every
-    // two seconds, and move the clock the pane draws elapsed time from.
+    // two seconds. In between, a beat moves the moons while anything works.
     const sync = async (): Promise<void> => {
       const infos = await $.agent.list()
       const now = await $.clock.now()
-      const before = await read($, rows)
-      const isBusy =
-        before.some(row => row.state === 'working') ||
-        infos.some(info => stateOf(info.status) === 'working')
-      if (infos.length > 0) {
-        await update($, rows, list =>
-          infos.reduce<AgentRow[]>(
-            (acc, info) =>
-              touch(acc, info.id, now, row => {
-                const state = stateOf(info.status)
-                const isOver = state !== 'working' && state !== 'waiting'
+      if (infos.length === 0) return
+      await update($, rows, list =>
+        infos.reduce<AgentRow[]>(
+          (acc, info) =>
+            touch(acc, info.id, now, row => {
+              const state = stateOf(info.status)
+              const isOver = state !== 'working' && state !== 'waiting'
 
-                return {
-                  ...row,
-                  title: info.description || info.name || row.title,
-                  kind: info.type || row.kind,
-                  state,
-                  now: state === 'working' ? row.now : WORD[state],
-                  endedAt: isOver ? (row.endedAt ?? now) : undefined,
-                }
-              }),
-            [...list],
-          ),
-        )
-      }
-      if (isBusy) await update($, tick, () => now)
+              return {
+                ...row,
+                title: info.description || info.name || row.title,
+                kind: info.type || row.kind,
+                state,
+                now: state === 'working' ? row.now : WORD[state],
+                endedAt: isOver ? (row.endedAt ?? now) : undefined,
+              }
+            }),
+          [...list],
+        ),
+      )
     }
-    $.clock.every(2000, () => void sync().catch(() => undefined))
+    let beats = 0
+    const beat = async (): Promise<void> => {
+      beats += 1
+      const isSyncBeat = beats % 4 === 0
+      if (isSyncBeat) await sync()
+      if (isCalm && !isSyncBeat) return
+      const list = await read($, rows)
+      if (list.some(row => row.state === 'working')) {
+        const now = await $.clock.now()
+        await update($, tick, () => now)
+      }
+    }
+    $.clock.every(BEAT_MS, () => void beat().catch(() => undefined))
 
     return next(e)
   })
 
-  on('command.run', { command: 'agent-watch' }, async $ => {
+  on('command.run', { command: 'agent-watch' }, async ($, e) => {
+    const word = e.args.trim().toLowerCase()
+    if (word === 'calm' || word === 'lively') {
+      isCalm = word === 'calm'
+      await $.store.set('calm', isCalm)
+
+      return {
+        text: isCalm
+          ? 'Agent Watch is calm: no moving moons and no finish notes.'
+          : 'Agent Watch is lively again: moving moons and finish notes are back.',
+      }
+    }
     const { isPlaced } = await $.ui.open({ id: PANE, title: TITLE })
 
     return {
@@ -197,7 +249,7 @@ export const register: Register = on => {
         touch(list, agentId, now, row => ({
           ...row,
           title: e.description || row.title,
-          kind: e.subagentType || row.kind,
+          kind: e.fork ? 'fork' : e.subagentType || row.kind,
           model,
         })),
       )
@@ -216,7 +268,7 @@ export const register: Register = on => {
         now: 'Thinking',
         endedAt: undefined,
         ...(id === MAIN
-          ? { startedAt: now, calls: 0, planDone: undefined, planTotal: undefined }
+          ? { startedAt: now, calls: 0, trail: [], planDone: undefined, planTotal: undefined }
           : {}),
       })),
     )
@@ -229,11 +281,13 @@ export const register: Register = on => {
     const id = e.agentId ?? MAIN
     const now = await $.clock.now()
     const input = e as unknown as Record<string, unknown>
+    const doing = describe(e.tool, input)
     await update($, rows, list =>
       touch(list, id, now, row => ({
         ...row,
         state: 'working',
-        now: describe(e.tool, input),
+        now: doing,
+        trail: [doing, ...(row.trail ?? [])].slice(0, 3),
         calls: row.calls + 1,
         endedAt: undefined,
         ...planOf(e.tool, input, row),
@@ -254,8 +308,8 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const state: AgentState =
       e.reason === 'error' ? 'failed' : e.isAborted ? 'stopped' : id === MAIN ? 'waiting' : 'done'
-    await update($, rows, list =>
-      touch(list, id, now, row => ({
+    const list = await update($, rows, all =>
+      touch(all, id, now, row => ({
         ...row,
         state,
         now: id === MAIN && state === 'waiting' ? 'Waiting for you' : WORD[state],
@@ -263,37 +317,95 @@ export const register: Register = on => {
       })),
     )
     await update($, tick, () => now)
+    const row = list.find(one => one.id === id)
+    if (row && id !== MAIN && !isCalm && (state === 'done' || state === 'failed')) {
+      const took = span(now - row.startedAt)
+      $.ui.toast(
+        state === 'done'
+          ? `✦ ${row.title} finished in ${took}`
+          : `✗ ${row.title} failed after ${took}`,
+      )
+    }
 
     return next(e)
+  })
+
+  // A one-line glance above the prompt while helpers are at work.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const list = await read($, rows)
+    const busy = list.filter(row => row.id !== MAIN && row.state === 'working')
+    if (e.props.hasSurvey || busy.length === 0) return next(e)
+    const beat = isCalm ? 4 : Math.floor((await read($, tick)) / BEAT_MS)
+    const lead = busy[0]
+    const { Box, Text, Button } = $.ui.resolve(e)
+
+    return (
+      <Box gap={1}>
+        <Text color={GOLD}>
+          {moon(beat)} {busy.length} {busy.length === 1 ? 'helper' : 'helpers'} working
+        </Text>
+        {lead && (
+          <Text dimColor>
+            {short(lead.title, 28)}: {short(lead.now, 36)}
+          </Text>
+        )}
+        <Button
+          key="watch"
+          label="Watch"
+          onPress={() => $.ui.open({ id: PANE, title: TITLE })}
+        />
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Progress, Button } = $.ui.resolve(e)
     const list = await read($, rows)
     const clock = await read($, tick)
+    const beat = isCalm ? 4 : Math.floor(clock / BEAT_MS)
     const working = list.filter(row => row.state === 'working').length
+    const done = list.filter(row => row.state === 'done').length
+    const actions = list.reduce((sum, row) => sum + row.calls, 0)
     const over = list.filter(
       row => row.id !== MAIN && row.state !== 'working' && row.state !== 'waiting',
     ).length
-    const summary =
-      list.length === 0
-        ? 'No agents yet'
-        : `${working} working · ${list.length - working} idle or finished`
 
-    if (e.props.placement === 'widget') return <Text>{summary}</Text>
+    if (e.props.placement === 'widget') {
+      return (
+        <Text color={working > 0 ? GOLD : undefined}>
+          {working > 0 ? `${moon(beat)} ${working} working` : list.length === 0 ? '🌙 No agents yet' : `✦ ${done} done`}
+        </Text>
+      )
+    }
 
     const sorted = [...list].sort(
       (a, b) => ORDER[a.state] - ORDER[b.state] || b.startedAt - a.startedAt,
     )
 
     return (
-      <Box flexDirection="column">
-        <Text dimColor>{summary}</Text>
-        <Text> </Text>
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
+          <Text bold color={GOLD}>
+            ☾ AGENT WATCH
+          </Text>
+          {list.length === 0 ? (
+            <Text dimColor>No agents yet</Text>
+          ) : (
+            <Box gap={2} flexWrap="wrap">
+              <Text color={working > 0 ? MOONLIGHT : undefined} dimColor={working === 0}>
+                {working > 0 ? moon(beat) : '🌙'} {working} working
+              </Text>
+              <Text color={GREEN}>✦ {done} done</Text>
+              <Text dimColor>{actions} actions</Text>
+            </Box>
+          )}
+        </Box>
         {list.length === 0 && (
-          <Text dimColor>Agents show up here as soon as Claude starts working.</Text>
+          <Text dimColor>
+            🌙 All quiet. Helpers show up here the moment Claude starts one.
+          </Text>
         )}
-        {sorted.map(row => {
+        {sorted.map((row, index) => {
           const end = row.endedAt ?? Math.max(clock, row.startedAt)
           const took = span(end - row.startedAt)
           const tag = [row.kind, row.model?.replace(/^claude-/, '')]
@@ -301,27 +413,48 @@ export const register: Register = on => {
             .join(' · ')
           const hasPlan = row.planTotal !== undefined && row.planTotal > 0
           const isWorking = row.state === 'working'
+          const mark = row.state === 'working' ? moon(beat, index * 3) : MARK[row.state]
+          const icon = ICON[row.kind] ?? '🤖'
+          const dots = isWorking && !isCalm ? '.'.repeat(beat % 4) : ''
+          const past = (row.trail ?? []).slice(row.now === row.trail?.[0] ? 1 : 0, 3)
 
           return (
-            <Box flexDirection="column">
-              <Text weight="bold">
-                {MARK[row.state]} {row.title}
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderColor={COLOR[row.state] ?? 'subtle'}
+              borderDimColor={!isWorking}
+              paddingX={1}
+            >
+              <Text bold color={isWorking ? GOLD : undefined}>
+                {mark} {icon} {row.title}
               </Text>
               <Text dimColor>
                 {tag} · {row.calls} actions · {took}
               </Text>
-              {(isWorking || hasPlan) && (
+              {isWorking && !hasPlan && (
+                <Text color={MOONLIGHT}>
+                  ▸ {row.now}
+                  {dots}
+                </Text>
+              )}
+              {hasPlan && (
                 <Progress
-                  label={row.now}
-                  value={hasPlan ? row.planDone ?? 0 : undefined}
-                  max={hasPlan ? row.planTotal : undefined}
-                  valueText={
-                    hasPlan ? `${row.planDone ?? 0} of ${row.planTotal} steps` : undefined
-                  }
+                  label={isWorking ? `▸ ${row.now}${dots}` : row.now}
+                  value={row.planDone ?? 0}
+                  max={row.planTotal}
+                  valueText={`${row.planDone ?? 0} of ${row.planTotal} steps`}
+                  color={GOLD}
                 />
               )}
-              {!isWorking && !hasPlan && <Text>{row.now}</Text>}
-              <Text> </Text>
+              {!isWorking && !hasPlan && <Text color={COLOR[row.state]}>{row.now}</Text>}
+              {isWorking &&
+                past.map(line => (
+                  <Text dimColor>
+                    {'  '}
+                    {line}
+                  </Text>
+                ))}
             </Box>
           )
         })}

@@ -12,6 +12,8 @@ export type AgentRow = {
   state: AgentState
   /** What it is doing right now, in plain words. */
   now: string
+  /** The last few things it did, newest first. */
+  trail?: string[]
   startedAt: number
   endedAt?: number
   /** How many tool calls it has made. */

@@ -137,40 +137,44 @@ export const register: Register = on => {
 
   // 2. Smaller browser screenshots ------------------------------------------
 
-  const shrink = (input: Loose): Loose | undefined =>
-    input.action === 'screenshot' && input.scale === undefined
-      ? { ...input, scale: settings.scale }
-      : undefined
+  // Asked for in the system prompt, not by rewriting the call: a rewritten
+  // call is sent back for a second safety check in auto mode, which costs more
+  // than the smaller picture saves.
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    if (!settings.shots || settings.scale >= 1) return composed
 
-  on('tool.call', async ($, e, next) => {
-    if (!settings.shots || settings.scale >= 1 || !BROWSER_TOOL.test(e.tool)) return next(e)
-    const input = e as unknown as Loose
-
-    if (e.tool.endsWith('__computer')) {
-      const smaller = shrink(input)
-      if (!smaller) return next(e)
-      bump('shrunk')
-      await $.store.set('totals', total).catch(() => undefined)
-
-      return next(smaller as unknown as typeof e)
+    return {
+      sections: [
+        ...composed.sections,
+        {
+          id: 'token-saver:screenshots',
+          text: `Browser screenshots: when you take one with a browser \`computer\` tool (action \`screenshot\`, alone or inside \`browser_batch\`), pass \`scale: ${settings.scale}\`. A smaller screenshot costs far fewer tokens, and click coordinates still use the full-size frame. Use \`zoom\` on a region, or \`scale: 1\`, only when you must read small text or fine detail.`,
+          scope: 'session' as const,
+        },
+      ],
     }
+  })
 
-    if (!Array.isArray(input.actions)) return next(e)
-    let changed = 0
-    const actions = input.actions.map((step: unknown) => {
-      if (!isRecord(step) || !isRecord(step.input)) return step
-      if (!String(step.name).endsWith('computer')) return step
-      const smaller = shrink(step.input)
-      if (!smaller) return step
-      changed += 1
+  const isSmallShot = (input: Loose): boolean =>
+    input.action === 'screenshot' && typeof input.scale === 'number' && input.scale < 1
 
-      return { ...step, input: smaller }
-    })
-    if (changed === 0) return next(e)
-    for (let i = 0; i < changed; i += 1) bump('shrunk')
-    await $.store.set('totals', total).catch(() => undefined)
+  // Counts the smaller screenshots; the call itself is passed on untouched.
+  on('tool.call', async ($, e, next) => {
+    if (!BROWSER_TOOL.test(e.tool)) return next(e)
+    const input = e as unknown as Loose
+    const steps = Array.isArray(input.actions) ? input.actions : [{ name: 'computer', input }]
+    const small = steps.filter(
+      (step: unknown) =>
+        isRecord(step) &&
+        isRecord(step.input) &&
+        String(step.name).endsWith('computer') &&
+        isSmallShot(step.input),
+    ).length
+    for (let i = 0; i < small; i += 1) bump('shrunk')
+    if (small > 0) await $.store.set('totals', total).catch(() => undefined)
 
-    return next({ ...input, actions } as unknown as typeof e)
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   // 3. Handoff to a fresh chat ----------------------------------------------
@@ -241,7 +245,7 @@ export const register: Register = on => {
       '**Token Saver**',
       '',
       `- **Helper agents on a cheaper model:** ${onOff(settings.agents)}. Routed ${here.routed} this chat, ${total.routed} in all. Search helpers run on Haiku and general helpers on Sonnet, unless the call names a model.`,
-      `- **Smaller browser screenshots:** ${onOff(settings.shots)}, kept at ${Math.round(settings.scale * 100)}% size (about ${Math.round(settings.scale * settings.scale * 100)}% of the tokens). Shrunk ${here.shrunk} this chat, ${total.shrunk} in all.`,
+      `- **Smaller browser screenshots:** ${onOff(settings.shots)}, kept at ${Math.round(settings.scale * 100)}% size (about ${Math.round(settings.scale * settings.scale * 100)}% of the tokens). Smaller ones taken: ${here.shrunk} this chat, ${total.shrunk} in all. A change here starts in your next new chat.`,
       `- **Long-chat nudge:** ${onOff(settings.nudge)}. Handoff notes written: ${here.handoffs} this chat, ${total.handoffs} in all. Type /handoff to write one.`,
       '',
       'Switch a part with `/saver agents off`, `/saver screenshots off` or `/saver nudge off` (and `on` to bring it back). `/saver screenshots 50` sets the size in percent.',

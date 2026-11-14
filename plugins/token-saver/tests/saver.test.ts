@@ -38,40 +38,31 @@ test('search helpers go to Haiku and general helpers to Sonnet, never as an upgr
   expect(seen).toEqual(['haiku', 'sonnet', 'opus', undefined, undefined, undefined, undefined, 'haiku', undefined])
 })
 
-test('browser screenshots are shrunk, on their own and inside a batch; nothing else is touched', async ($, on) => {
+test('smaller browser screenshots are asked for in the system prompt, and calls are never rewritten', async ($, on) => {
   const seen: Record<string, unknown>[] = []
   on('store.set', () => ({ value: undefined }))
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'Hello', scope: 'shared' as const }] }))
   on('tool.call', (_, e) => {
     seen.push(e as unknown as Record<string, unknown>)
 
     return { result: {} }
   })
 
-  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'screenshot' })
-  await $.tool.call({ tool: 'mcp__claude-in-chrome__computer', action: 'screenshot', tabId: 1 })
-  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'screenshot', scale: 1 })
-  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'zoom', region: [0, 0, 10, 10] })
-  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'left_click', coordinate: [5, 5] })
-  await $.tool.call({
-    tool: 'mcp__Claude_Browser__browser_batch',
-    actions: [
-      { name: 'navigate', input: { url: 'https://example.com' } },
-      { name: 'computer', input: { action: 'screenshot' } },
-      { name: 'computer', input: { action: 'left_click', coordinate: [1, 2] } },
-    ],
+  const { sections } = await $.prompt.compose({
+    model: 'claude-fable-5-2',
+    promptModel: 'claude-fable-5-2',
+    surfaces: ['desktop'],
+    tools: [],
+    outputStyle: null,
+    traits: [],
   })
-  await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect(sections.map(s => s.id)).toEqual(['intro', 'token-saver:screenshots'])
+  expect(sections[1]?.text).toContain('scale: 0.6')
 
-  expect(seen[0]?.scale).toBe(0.6)
+  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'screenshot' })
+  await $.tool.call({ tool: 'mcp__Claude_Browser__computer', action: 'screenshot', scale: 0.6 })
+  expect(seen[0]?.scale).toBeUndefined()
   expect(seen[1]?.scale).toBe(0.6)
-  expect(seen[2]?.scale).toBe(1)
-  expect(seen[3]?.scale).toBeUndefined()
-  expect(seen[4]?.scale).toBeUndefined()
-  const steps = seen[5]?.actions as { input: Record<string, unknown> }[]
-  expect(steps[0]?.input.scale).toBeUndefined()
-  expect(steps[1]?.input.scale).toBe(0.6)
-  expect(steps[2]?.input.scale).toBeUndefined()
-  expect(seen[6]?.command).toBe('ls')
 })
 
 test('/saver switches a part off, remembers it, and reports it', async ($, on) => {
