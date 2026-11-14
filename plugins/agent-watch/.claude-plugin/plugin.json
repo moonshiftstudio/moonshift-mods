@@ -1,0 +1,11 @@
+{
+  "name": "agent-watch",
+  "version": "0.1.0",
+  "description": "Agent Watch: a panel that lists every agent in the session, what each one is doing right now, its model, and how far along it is; /agent-watch opens it.",
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "author": {
+    "name": "Moonshift Studio",
+    "email": "hello@moonshiftstudio.com"
+  }
+}

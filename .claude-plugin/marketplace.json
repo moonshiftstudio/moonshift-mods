@@ -1,6 +1,6 @@
 {
   "name": "moonshift-mods",
-  "description": "Claude Code mods for building Moonshift Studio apps: studio board, secret guard and the Moonshift skin.",
+  "description": "Claude Code mods for building Moonshift Studio apps: studio board, secret guard, the Moonshift skin and Agent Watch.",
   "owner": {
     "name": "Moonshift Studio",
     "email": "hello@moonshiftstudio.com"
@@ -20,6 +20,11 @@
       "name": "moonshift-skin",
       "source": "./plugins/moonshift-skin",
       "description": "Moonshift look: night-shift spinner words, a gold shift-done line and the app you're working on in the footer."
+    },
+    {
+      "name": "agent-watch",
+      "source": "./plugins/agent-watch",
+      "description": "/agent-watch opens a panel that lists every agent in the session, what each one is doing right now, its model, and how far along it is."
     }
   ]
 }
